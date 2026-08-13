@@ -7,6 +7,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills" / "remove-ai-marks" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -43,6 +45,25 @@ Body\u200b text.
     assert any("drop" in a for a in actions)
 
 
+def test_markdown_drops_nested_children_with_parent():
+    text = "---\ntitle: Kept\nai_generated:\n  model: Claude\n  score: 1\n---\nBody\n"
+    cleaned, actions = clean_markdown(text)
+    assert "title: Kept" in cleaned
+    assert "ai_generated" not in cleaned
+    assert "model: Claude" not in cleaned
+    assert "score: 1" not in cleaned
+    assert actions
+
+
+def test_markdown_preserves_generic_generator_and_arbitrary_values():
+    text = "---\ngenerator: Hugo\ntitle: OpenAI field notes\n---\nBody\n"
+    _c2, has_ai, _findings, _details = inspect_markdown(text)
+    cleaned, actions = clean_markdown(text)
+    assert not has_ai
+    assert cleaned == text
+    assert actions == ["no AI frontmatter keys removed"]
+
+
 def test_html_meta_strip():
     html = """<html><head>
 <meta name="generator" content="ChatGPT">
@@ -58,6 +79,31 @@ def test_html_meta_strip():
     assert any("drop" in a for a in actions)
 
 
+def test_html_preserves_generic_generator_and_descriptive_content():
+    html = (
+        '<meta name="generator" content="Hugo">'
+        '<meta name="description" content="OpenAI field notes">'
+    )
+    _c2, has_ai, _findings, _details = inspect_html(html)
+    cleaned, actions = clean_html(html)
+    assert not has_ai
+    assert cleaned == html
+    assert actions == ["no HTML AI meta removed"]
+
+
+def test_html_jsonld_removes_only_provenance_field():
+    html = (
+        '<script type="application/ld+json">'
+        '{"name":"OpenAI field notes","generator":"ChatGPT","count":2}'
+        "</script>"
+    )
+    cleaned, actions = clean_html(html)
+    assert '"name":"OpenAI field notes"' in cleaned
+    assert '"count":2' in cleaned
+    assert '"generator"' not in cleaned
+    assert any("json-ld" in action for action in actions)
+
+
 def test_svg_metadata():
     svg = b"""<?xml version="1.0"?>
 <svg xmlns="http://www.w3.org/2000/svg">
@@ -70,6 +116,16 @@ def test_svg_metadata():
     assert b"<metadata" not in cleaned.lower() or b"c2pa" not in cleaned.lower()
     assert b"<circle" in cleaned
     assert any("metadata" in a or "drop" in a for a in actions)
+
+
+def test_svg_preserves_generic_metadata():
+    svg = b'<svg><metadata><title>Artist notes</title></metadata><text>OpenAI</text></svg>'
+    has_c2pa, has_ai, _findings, _details = inspect_svg(svg)
+    cleaned, actions = clean_svg(svg)
+    assert not has_c2pa
+    assert not has_ai
+    assert cleaned == svg
+    assert actions == ["no SVG metadata removed"]
 
 
 def _make_docx_with_app(app_name: str = "Claude AI Writer") -> bytes:
@@ -100,14 +156,15 @@ def _make_docx_with_app(app_name: str = "Claude AI Writer") -> bytes:
     return buf.getvalue()
 
 
-def test_docx_strips_app_and_customxml(tmp_path: Path):
+def test_docx_strips_app_and_preserves_customxml(tmp_path: Path):
     data = _make_docx_with_app()
     cleaned, actions = clean_docx(data)
     assert any("customXml" in a or "Application" in a or "drop" in a for a in actions)
     with zipfile.ZipFile(io.BytesIO(cleaned)) as zf:
         names = zf.namelist()
         assert "word/document.xml" in names
-        assert not any(n.startswith("customXml/") for n in names)
+        assert "customXml/item1.xml" in names
+        assert b"c2pa contentcredentials" in zf.read("customXml/item1.xml")
         app = zf.read("docProps/app.xml").decode()
         assert "Claude" not in app
 
@@ -177,8 +234,7 @@ def test_fixtures_md_html_svg_roundtrip(tmp_path: Path):
         assert b"generator: claude" not in body
 
 
-def test_pdf_degraded_clean_without_crash(tmp_path: Path):
-    """Minimal PDF with an XMP packet; clean should not raise (may be degraded)."""
+def test_pdf_is_inspect_only(tmp_path: Path):
     from container_meta import clean_pdf, inspect_pdf
 
     xmp = (
@@ -203,7 +259,6 @@ def test_pdf_degraded_clean_without_crash(tmp_path: Path):
     src.write_bytes(pdf)
     has_c2pa, has_ai, findings, _ = inspect_pdf(src, pdf)
     assert has_ai or has_c2pa or findings
-    actions, meta = clean_pdf(src, dest)
-    assert dest.is_file()
-    assert actions
-    assert meta.get("mode") in ("exiftool", "stdlib-xmp", "copy")
+    with pytest.raises(ValueError, match="disabled"):
+        clean_pdf(src, dest)
+    assert not dest.exists()

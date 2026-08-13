@@ -19,9 +19,16 @@ def test_strips_zero_width_and_soft_hyphen():
     assert stats["removed_count"] >= 2
 
 
-def test_normalizes_exotic_spaces():
+def test_preserves_exotic_spaces_by_default():
     raw = "a\u2003b\u3000c"  # em space, ideographic space
     cleaned, stats = clean_text(raw)
+    assert cleaned == raw
+    assert stats["replaced_count"] == 0
+
+
+def test_normalizes_exotic_spaces_only_when_requested():
+    raw = "a\u2003b\u3000c"
+    cleaned, stats = clean_text(raw, normalize_spaces=True)
     assert cleaned == "a b c"
     assert stats["replaced_count"] >= 2
 
@@ -40,6 +47,9 @@ def test_inspect_tag_chars():
     assert report.suspicious_total >= 1
     assert any(h.kind == "tag_chars" for h in report.hits)
     cleaned, stats = clean_text(raw)
+    assert chr(0xE0041) in cleaned
+    assert stats["removed_count"] == 0
+    cleaned, stats = clean_text(raw, aggressive_unicode=True)
     assert chr(0xE0041) not in cleaned
     assert stats["removed_count"] >= 1
 
@@ -49,7 +59,30 @@ def test_inspect_bidi():
     report = inspect_text(raw)
     assert any(h.kind == "bidi" for h in report.hits)
     cleaned, _ = clean_text(raw)
+    assert "\u202e" in cleaned
+    cleaned, _ = clean_text(raw, aggressive_unicode=True)
     assert "\u202e" not in cleaned
+
+
+def test_default_preserves_joiners_variation_and_narrow_no_break_space():
+    samples = (
+        "👨\u200d👩\u200d👧\u200d👦",
+        "✈\ufe0f",
+        "می\u200cروم",
+        "10\u202f000",
+    )
+    for raw in samples:
+        cleaned, stats = clean_text(raw)
+        assert cleaned == raw
+        assert stats["removed_count"] == 0
+        assert stats["replaced_count"] == 0
+
+
+def test_aggressive_unicode_removes_joiner_and_variation_selector():
+    raw = "A\u200dB\ufe0f"
+    cleaned, stats = clean_text(raw, aggressive_unicode=True)
+    assert cleaned == "AB"
+    assert stats["removed_count"] == 2
 
 
 def test_clean_preserves_normal_text():

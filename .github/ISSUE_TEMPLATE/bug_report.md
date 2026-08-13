@@ -24,15 +24,15 @@ What should have happened instead.
 
 - OS and arch:
 - Python version (`python3 --version`):
-- How you run the skill (Grok skill path / symlink / scripts only):
-- Optional tools present (`c2patool`, `exiftool`) and versions if relevant:
+- Exact commit revision:
+- How you run the skill (Codex skill path or repository scripts):
 
 ## Input type
 
 - [ ] Text (paste / `.txt` / `.md` / other)
 - [ ] Image (PNG / JPEG)
-- [ ] Both / batch directory
-- Layer involved: A (Unicode) / B (rewrite guidance) / Files (C2PA/metadata)
+- [ ] Document (SVG / PDF / DOCX / ODT / HTML / Markdown)
+- Layer involved: Unicode / image metadata / document metadata / offline rewrite prompt
 
 ## Diagnostics
 

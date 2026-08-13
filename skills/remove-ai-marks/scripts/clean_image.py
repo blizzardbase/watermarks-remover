@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import cleaned_path, eprint  # noqa: E402
+from common import cleaned_path, create_backup, eprint  # noqa: E402
 from image_meta import clean_image  # noqa: E402
 
 
@@ -24,27 +24,22 @@ def main() -> int:
         help="Overwrite input (writes .bak backup first)",
     )
     p.add_argument(
-        "--keep-non-ai-metadata",
+        "--strip-all-metadata",
         action="store_true",
-        help="Only drop segments/chunks that look like C2PA/AI (less aggressive)",
+        help="Also drop unrelated metadata segments",
     )
     p.add_argument("--json", action="store_true", help="JSON result on stdout")
-    p.add_argument(
-        "--synthid-dir",
-        type=str,
-        default=None,
-        help="reverse-SynthID checkout root for optional pixel SynthID scoring",
-    )
     args = p.parse_args()
 
-    if not args.path.is_file():
-        eprint(f"not a file: {args.path}")
-        return 2
-
     src = args.path
+    expected_existing = None
     if args.in_place:
-        bak = args.path.with_suffix(args.path.suffix + ".bak")
-        bak.write_bytes(args.path.read_bytes())
+        try:
+            bak, expected_existing = create_backup(args.path)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
+        eprint(f"backup={bak}")
         src = bak
         dest = args.path
     else:
@@ -54,8 +49,8 @@ def main() -> int:
         result = clean_image(
             src,
             dest,
-            strip_all_metadata=not args.keep_non_ai_metadata,
-            synthid_dir=args.synthid_dir,
+            strip_all_metadata=args.strip_all_metadata,
+            expected_existing=expected_existing,
         )
     except Exception as e:
         eprint(f"error: {e}")
@@ -67,20 +62,6 @@ def main() -> int:
         eprint(f"wrote {result['output']} ({result['bytes_in']} -> {result['bytes_out']})")
         for a in result["actions"]:
             eprint(f"  - {a}")
-        if result.get("synthid_before") and result["synthid_before"].get("available"):
-            label = "yes" if result["synthid_before"].get("is_watermarked") else "no"
-            eprint(
-                "SynthID before: "
-                f"confidence {result['synthid_before'].get('confidence', 0.0):.3f} "
-                f"(watermarked: {label})"
-            )
-        if result.get("synthid_after") and result["synthid_after"].get("available"):
-            label = "yes" if result["synthid_after"].get("is_watermarked") else "no"
-            eprint(
-                "SynthID after: "
-                f"confidence {result['synthid_after'].get('confidence', 0.0):.3f} "
-                f"(watermarked: {label})"
-            )
         if result["still_has_c2pa"] or result["still_has_ai_metadata"]:
             eprint("warning: residual C2PA/AI signals may remain")
             for f in result.get("post_findings") or []:

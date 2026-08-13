@@ -10,7 +10,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import cleaned_path, eprint, read_text_input, write_text_output  # noqa: E402
+from common import (  # noqa: E402
+    atomic_write_text,
+    cleaned_path,
+    create_backup,
+    eprint,
+    read_text_input,
+    write_text_output,
+)
 from text_unicode import clean_text  # noqa: E402
 
 
@@ -25,9 +32,14 @@ def main() -> int:
         help="Map Cyrillic/fullwidth Latin confusables to ASCII Latin",
     )
     p.add_argument(
-        "--no-normalize-spaces",
+        "--normalize-spaces",
         action="store_true",
-        help="Do not rewrite exotic spaces to U+0020",
+        help="Rewrite special spaces to U+0020",
+    )
+    p.add_argument(
+        "--aggressive-unicode",
+        action="store_true",
+        help="Also remove joiners, direction controls, tags, and variation selectors",
     )
     p.add_argument("--stats", action="store_true", help="Print stats JSON to stderr")
     p.add_argument(
@@ -37,27 +49,46 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    text = read_text_input(args.path)
+    if args.in_place and args.path in (None, "-"):
+        eprint("--in-place requires a file path")
+        return 2
+
+    try:
+        text = read_text_input(args.path)
+    except (OSError, ValueError) as exc:
+        eprint(f"error: {exc}")
+        return 2
+
     cleaned, stats = clean_text(
         text,
         nfkc=args.nfkc,
         aggressive_homoglyphs=args.aggressive_homoglyphs,
-        normalize_spaces=not args.no_normalize_spaces,
+        normalize_spaces=args.normalize_spaces,
+        aggressive_unicode=args.aggressive_unicode,
     )
 
     out = args.output
+    expected_existing = None
     if args.in_place:
-        if args.path in (None, "-"):
-            eprint("--in-place requires a file path")
-            return 2
         src = Path(args.path)
-        bak = src.with_suffix(src.suffix + ".bak")
-        bak.write_text(text, encoding="utf-8")
+        try:
+            bak, expected_existing = create_backup(src)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
+        eprint(f"backup={bak}")
         out = str(src)
     elif out is None and args.path not in (None, "-"):
         out = str(cleaned_path(Path(args.path)))
 
-    write_text_output(cleaned, out)
+    try:
+        if expected_existing is not None:
+            atomic_write_text(cleaned, out, expected_existing=expected_existing)
+        else:
+            write_text_output(cleaned, out)
+    except (OSError, ValueError) as exc:
+        eprint(f"error: {exc}")
+        return 2
 
     if args.stats:
         eprint(json.dumps(stats, indent=2, ensure_ascii=False))

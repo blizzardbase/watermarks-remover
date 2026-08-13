@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Layer A: invisible Unicode / homoglyph space detection and cleaning."""
 
 from __future__ import annotations
@@ -6,7 +7,9 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 
-# Format / invisible controls commonly used for steganography or broken pastes.
+# Format and invisible controls that can be steganographic carriers. Many also
+# have legitimate shaping or presentation roles, so the complete set is used
+# only for inspection and explicit aggressive cleaning.
 STRIP_CODEPOINTS: frozenset[int] = frozenset(
     {
         0x00AD,  # soft hyphen
@@ -65,6 +68,18 @@ STRIP_CODEPOINTS: frozenset[int] = frozenset(
         0xFFF9,  # interlinear annotation
         0xFFFA,
         0xFFFB,
+    }
+)
+
+# Default cleaning is deliberately narrow. These characters are invisible and
+# commonly accidental in prose, while joiners, direction controls, tag
+# characters, and variation selectors remain intact unless aggressive cleaning
+# is selected.
+SAFE_STRIP_CODEPOINTS: frozenset[int] = frozenset(
+    {
+        0x00AD,  # soft hyphen
+        0x200B,  # zero width space
+        0xFEFF,  # BOM / zero width no break space
     }
 )
 
@@ -191,7 +206,7 @@ _ZW_FAMILY: frozenset[int] = frozenset(
 )
 
 
-def _is_strip_cp(cp: int) -> bool:
+def _is_suspicious_cp(cp: int) -> bool:
     if cp in STRIP_CODEPOINTS:
         return True
     if cp in _VS_SUPPLEMENT:
@@ -200,6 +215,12 @@ def _is_strip_cp(cp: int) -> bool:
     if 0xE0001 <= cp <= 0xE007F:
         return True
     return False
+
+
+def _should_strip_cp(cp: int, *, aggressive_unicode: bool) -> bool:
+    if aggressive_unicode:
+        return _is_suspicious_cp(cp)
+    return cp in SAFE_STRIP_CODEPOINTS
 
 
 def _strip_kind(cp: int) -> str:
@@ -262,7 +283,7 @@ def inspect_text(text: str, *, aggressive: bool = False) -> TextInspectReport:
     for i, ch in enumerate(text):
         cp = ord(ch)
         kind: str | None = None
-        if _is_strip_cp(cp):
+        if _is_suspicious_cp(cp):
             kind = _strip_kind(cp)
         elif cp in SPACE_HOMOGLYPHS:
             kind = "space"
@@ -309,7 +330,8 @@ def clean_text(
     *,
     nfkc: bool = False,
     aggressive_homoglyphs: bool = False,
-    normalize_spaces: bool = True,
+    normalize_spaces: bool = False,
+    aggressive_unicode: bool = False,
 ) -> tuple[str, dict]:
     """Return cleaned text and a stats dict."""
     removed: Counter[str] = Counter()
@@ -318,7 +340,7 @@ def clean_text(
 
     for ch in text:
         cp = ord(ch)
-        if _is_strip_cp(cp):
+        if _should_strip_cp(cp, aggressive_unicode=aggressive_unicode):
             removed[_char_label(ch)] += 1
             continue
         if normalize_spaces and cp in SPACE_HOMOGLYPHS:
@@ -329,8 +351,13 @@ def clean_text(
             replaced[_char_label(ch)] += 1
             out_chars.append(LATIN_CONFUSABLES[cp])
             continue
-        # Other Cf: strip by default for hygiene
-        if unicodedata.category(ch) == "Cf" and cp not in SPACE_HOMOGLYPHS:
+        # Unknown format controls remain intact by default because they may be
+        # required for a script. Aggressive cleaning removes them explicitly.
+        if (
+            aggressive_unicode
+            and unicodedata.category(ch) == "Cf"
+            and cp not in SPACE_HOMOGLYPHS
+        ):
             removed[_char_label(ch)] += 1
             continue
         out_chars.append(ch)
@@ -351,6 +378,8 @@ def clean_text(
         "replaced": dict(replaced),
         "removed_count": sum(removed.values()),
         "replaced_count": sum(v for k, v in replaced.items() if k != "NFKC_normalize"),
+        "unicode_profile": "aggressive" if aggressive_unicode else "safe",
+        "spaces_normalized": normalize_spaces,
     }
     return result, stats
 
