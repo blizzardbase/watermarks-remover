@@ -122,6 +122,9 @@ Before merge, close the pull request and delete the feature branch. After merge,
 5. 13 August 2026: Completed 45 focused tests, offline smoke checks, syntax parsing, static execution surface searches, ignore checks, and whitespace verification locally.
 6. 13 August 2026: Opened pull request 1. Continuous integration passed. CodeRabbit found 11 actionable issues plus six lower priority notes. All valid findings were addressed, including credential persistence, read races, output races, nested JSON safety, archive bounds, snapshot reuse, residual status handling, unknown binary rejection, and preserved DOCX signal reporting. The focused suite now contains 51 passing tests.
 7. 13 August 2026: CodeRabbit rechecked the fixes and found one additional major reporting issue. DOCX inspection now reports preserved custom XML signals honestly while cleanup status excludes only those intentionally preserved parts. Unexpected residual metadata still fails cleanup status.
+8. 13 August 2026: Continuous integration and CodeRabbit completed without an unresolved actionable finding. Pull request 1 was squash merged as `dc31f434b93776a431890bcf7659a002fb330178`, then local `main` was synchronized with `origin/main`.
+9. 13 August 2026: Installed the skill from the exact merge revision into `/Users/itshv/.codex/skills/remove-ai-marks`. All 15 installed file hashes matched the Git objects at that revision. The installed offline rewrite, cleaning, and inspection smoke checks passed.
+10. 13 August 2026: Reconciled the personal Installed Tools register and added the [watermarks remover record](https://app.notion.com/p/3bb7ed8960258120a007cf780ceb4118). The record contains the source, install method, audited revision, limitations, review date, and security findings.
 
 ## Discoveries
 
@@ -146,8 +149,11 @@ Before merge, close the pull request and delete the feature branch. After merge,
 1. Before commit `23785297cdac067681f2ab0a206c6a0051a8fb32`, inspected the complete diff, secret patterns, ignored secret filenames, static execution surfaces, and unrelated changes. Pushed the initial hardening branch.
 2. Before commit `1418c25832f6391011a02f7a68b01adf8bde8b10`, inspected the review fix diff and reran 50 tests, offline smoke checks, syntax parsing, static execution surface searches, secret searches, and whitespace verification. Pushed the reviewed fixes.
 3. Before commit `8eb38fa82cbf084beb22c104300827fc04990527`, inspected the DOCX reporting fix and reran 51 tests, offline smoke checks, secret searches, and whitespace verification. Pushed the second review fix.
-4. The final merge commit does not exist yet. Record its full revision after merge before installation.
+4. Before the final reviewed push, inspected the documentation fixes, reran whitespace and secret checks, and confirmed that continuous integration and CodeRabbit were green. Pull request 1 was squash merged as `dc31f434b93776a431890bcf7659a002fb330178`.
+5. Before the final documentation push, inspected the complete diff against `origin/main`, reran whitespace and secret checks, and confirmed that the only change records the merge, installation verification, and Installed Tools outcome.
 
 ## Outcomes
 
-Implementation and local verification are complete. Pull request review, merge, exact commit installation, installed hash comparison, and Installed Tools registration remain pending.
+Complete. [Pull request 1](https://github.com/blizzardbase/watermarks-remover/pull/1) was reviewed, passed every required check, and was squash merged as `dc31f434b93776a431890bcf7659a002fb330178`. The exact revision is installed at `/Users/itshv/.codex/skills/remove-ai-marks`; all 15 installed files match their Git object hashes and the offline smoke checks pass. The [Installed Tools record](https://app.notion.com/p/3bb7ed8960258120a007cf780ceb4118) records the source, exact pin, install method, review evidence, and limitations.
+
+The installed skill remains deliberately conservative. PDF support is inspection only. Pixel, audio, video, and statistical text marks remain outside scope. Broad Unicode and metadata removal requires explicit options.
