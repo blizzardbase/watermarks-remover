@@ -48,9 +48,9 @@ PYTHONDONTWRITEBYTECODE=1 env -u WATERMARKS_MAX_INPUT_BYTES python3 "$CODEX_HOME
 PYTHONDONTWRITEBYTECODE=1 env -u WATERMARKS_MAX_INPUT_BYTES python3 "$CODEX_HOME/skills/remove-ai-marks/scripts/inspect_file.py" tests/fixtures/sample_ai.md --json >/dev/null
 ```
 
-The rewrite command exited `0`, reported `network_calls: 0`, read 42 characters, and generated a 321 character offline prompt.
+The rewrite command exited `0`, reported `network_calls: 0`, read 42 characters, and generated an offline prompt containing 321 characters.
 
-The cleaning command exited `0`, removed two zero width spaces and one soft hyphen, preserved the safe Unicode profile, and performed no replacement.
+The cleaning command exited `0` and removed two characters named `ZERO WIDTH SPACE` plus one soft hyphen. It preserved the safe Unicode profile and performed no replacement.
 
 The inspection command exited `1` as expected because the fixture contains an AI provenance signal.
 

@@ -126,6 +126,7 @@ Before merge, close the pull request and delete the feature branch. After merge,
 9. 13 August 2026: Installed the skill from the exact merge revision into `$CODEX_HOME/skills/remove-ai-marks`. All 15 installed content hashes matched the Git objects at that revision. The installed offline rewrite, cleaning, and inspection smoke checks passed. The [installation verification record](../audits/2026-08-13-remove-ai-marks-installation.md) contains each hash, command, and outcome.
 10. 13 August 2026: Reconciled the personal Installed Tools register and added the [watermarks remover record](https://app.notion.com/p/3bb7ed8960258120a007cf780ceb4118). The record contains the source, install method, audited revision, limitations, review date, and security findings.
 11. 13 August 2026: CodeRabbit reviewed pull request 2 and found a valid local identity disclosure in the recorded installation path. Replaced it with `$CODEX_HOME`, added the versioned verification record, and reran the documentation checks.
+12. 13 August 2026: CodeRabbit found two compound modifier grammar issues. Reworded both sentences to follow the repository copy convention without adding banned punctuation.
 
 ## Discoveries
 
@@ -153,6 +154,7 @@ Before merge, close the pull request and delete the feature branch. After merge,
 4. Before the final reviewed push, inspected the documentation fixes, reran whitespace and secret checks, and confirmed that continuous integration and CodeRabbit were green. Pull request 1 was squash merged as `dc31f434b93776a431890bcf7659a002fb330178`.
 5. Before the final documentation push, inspected the complete diff against `origin/main`, reran whitespace and secret checks, and confirmed that the only change records the merge, installation verification, and Installed Tools outcome.
 6. Before the CodeRabbit documentation fix push, inspected the complete diff, confirmed that the personal path was absent, checked all 15 recorded content hashes against the installed files, reran the three installed smoke commands, and reran whitespace and secret checks.
+7. Before the grammar fix push, inspected the complete diff, confirmed that it contains no personal path or banned punctuation in prose, and reran whitespace and secret checks.
 
 ## Outcomes
 
