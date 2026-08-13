@@ -33,11 +33,20 @@ def input_limit_bytes() -> int:
     return min(requested, HARD_MAX_INPUT_BYTES)
 
 
+def _no_follow_flag() -> int:
+    flag = getattr(os, "O_NOFOLLOW", None)
+    if flag is None:
+        raise ValueError(
+            "secure file opening is unavailable on this operating system"
+        )
+    return flag
+
+
 def _read_regular_file(path: Path) -> bytes:
     if path.is_symlink():
         raise ValueError(f"refusing symbolic link input: {path}")
 
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | _no_follow_flag()
     try:
         fd = os.open(path, flags)
     except OSError as exc:
@@ -107,12 +116,6 @@ def atomic_write_bytes(
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        if out.is_symlink():
-            raise ValueError(f"refusing symbolic link output: {out}")
-        if out.exists():
-            current = out.stat(follow_symlinks=False)
-            if not stat.S_ISREG(current.st_mode):
-                raise ValueError(f"refusing nonregular output: {out}")
         if expected_existing is not None:
             try:
                 current = out.stat(follow_symlinks=False)
@@ -123,11 +126,33 @@ def atomic_write_bytes(
                 current.st_ino,
             ) != expected_existing:
                 raise ValueError(f"output changed before replacement: {out}")
-        elif out.exists():
-            raise ValueError(
-                f"refusing to replace existing output without in place mode: {out}"
-            )
-        os.replace(temporary, out)
+            os.replace(temporary, out)
+        else:
+            try:
+                destination_fd = os.open(
+                    out,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | _no_follow_flag(),
+                    0o600,
+                )
+            except FileExistsError as exc:
+                raise ValueError(
+                    f"refusing to replace existing output without in place mode: {out}"
+                ) from exc
+            try:
+                with temporary.open("rb") as source:
+                    while chunk := source.read(1024 * 1024):
+                        view = memoryview(chunk)
+                        while view:
+                            written = os.write(destination_fd, view)
+                            if written <= 0:
+                                raise OSError("output write made no progress")
+                            view = view[written:]
+                os.fsync(destination_fd)
+            except Exception:
+                out.unlink(missing_ok=True)
+                raise
+            finally:
+                os.close(destination_fd)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -151,7 +176,8 @@ def create_backup(path: str | Path) -> tuple[Path, tuple[int, int]]:
     if src.is_symlink():
         raise ValueError(f"refusing symbolic link input: {src}")
 
-    source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    no_follow = _no_follow_flag()
+    source_flags = os.O_RDONLY | no_follow
     source_fd = os.open(src, source_flags)
     try:
         info = os.fstat(source_fd)
@@ -168,7 +194,7 @@ def create_backup(path: str | Path) -> tuple[Path, tuple[int, int]]:
                 os.O_WRONLY
                 | os.O_CREAT
                 | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0)
+                | no_follow
             )
             try:
                 backup_fd = os.open(candidate, flags, 0o600)

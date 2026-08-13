@@ -95,7 +95,7 @@ Acceptance criteria:
 | `python3 skills/remove-ai-marks/scripts/rewrite_text.py tests/fixtures/sample_watermarked.txt` | Prints an offline prompt and performs no network call |
 | `python3 skills/remove-ai-marks/scripts/clean_text.py tests/fixtures/sample_watermarked.txt --stats` | Writes a separate cleaned file and reports deterministic counts |
 | `python3 skills/remove-ai-marks/scripts/inspect_file.py tests/fixtures/sample_ai.md --json` | Produces local JSON findings without a model or network call |
-| `rg -n "urllib|requests|httpx|API_KEY|reverse.SynthID|setup_synthid" skills/remove-ai-marks` | No executable network, credential, or reverse SynthID path remains |
+| `rg -n -e urllib -e requests -e httpx -e API_KEY -e 'reverse\.SynthID' -e setup_synthid skills/remove-ai-marks` | No executable network, credential, or reverse SynthID path remains |
 | `git diff --check` | No whitespace error |
 | `git status --short` | Only intended branch changes before commit, then clean after commit |
 
@@ -120,6 +120,7 @@ Before merge, close the pull request and delete the feature branch. After merge,
 3. 13 August 2026: Removed external execution and dependency paths. Added conservative defaults, bounded input, atomic output, exclusive backups, archive limits, and targeted container cleaning.
 4. 13 August 2026: Added repository context files, updated behavior documentation, pinned continuous integration actions, and added a hash locked development manifest.
 5. 13 August 2026: Completed 45 focused tests, offline smoke checks, syntax parsing, static execution surface searches, ignore checks, and whitespace verification locally.
+6. 13 August 2026: Opened pull request 1. Continuous integration passed. CodeRabbit found 11 actionable issues plus six low value notes. All valid findings were addressed, including credential persistence, read races, output races, nested JSON safety, archive bounds, snapshot reuse, residual status handling, unknown binary rejection, and preserved DOCX signal reporting. The focused suite now contains 50 passing tests.
 
 ## Discoveries
 
@@ -136,6 +137,8 @@ Before merge, close the pull request and delete the feature branch. After merge,
 3. Keep rewrite support offline because Harish already has a separate prose humanizer capability.
 4. Refuse existing output destinations unless the caller selected in place mode and the destination identity still matches the backed up file.
 5. Preserve generic SVG metadata, image EXIF and comments, HTML generator fields, ODT generator fields, and DOCX custom XML unless a high confidence AI provenance marker is present.
+6. Treat intentionally preserved DOCX custom XML signals as reported limitations instead of failed cleanup, while unexpected residual signals still fail.
+7. Fail closed on operating systems without descriptor level no follow support.
 
 ## Push inspection log
 

@@ -53,8 +53,24 @@ def main() -> int:
         eprint("--in-place requires a file path")
         return 2
 
+    out = args.output
+    expected_existing = None
+    input_path = args.path
+    if args.in_place:
+        src = Path(args.path)
+        try:
+            bak, expected_existing = create_backup(src)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
+        eprint(f"backup={bak}")
+        input_path = str(bak)
+        out = str(src)
+    elif out is None and args.path not in (None, "-"):
+        out = str(cleaned_path(Path(args.path)))
+
     try:
-        text = read_text_input(args.path)
+        text = read_text_input(input_path)
     except (OSError, ValueError) as exc:
         eprint(f"error: {exc}")
         return 2
@@ -66,20 +82,6 @@ def main() -> int:
         normalize_spaces=args.normalize_spaces,
         aggressive_unicode=args.aggressive_unicode,
     )
-
-    out = args.output
-    expected_existing = None
-    if args.in_place:
-        src = Path(args.path)
-        try:
-            bak, expected_existing = create_backup(src)
-        except (OSError, ValueError) as exc:
-            eprint(f"error: {exc}")
-            return 2
-        eprint(f"backup={bak}")
-        out = str(src)
-    elif out is None and args.path not in (None, "-"):
-        out = str(cleaned_path(Path(args.path)))
 
     try:
         if expected_existing is not None:

@@ -2,9 +2,10 @@
 name: remove-ai-marks
 description: >
   Inspect and conservatively clean invisible Unicode or AI provenance metadata
-  from text, PNG, JPEG, SVG, DOCX, ODT, HTML, Markdown, and PDF files. Use when
-  the user asks to inspect or remove AI metadata, C2PA data, Content Credentials,
-  or suspicious invisible Unicode from content they own or may edit.
+  from text, PNG, JPEG, SVG, DOCX, ODT, HTML, and Markdown. Inspect PDF files
+  without rewriting them. Use when the user asks to inspect or remove AI
+  metadata, C2PA data, Content Credentials, or suspicious invisible Unicode
+  from content they own or may edit.
 ---
 
 # Remove AI marks
@@ -47,6 +48,9 @@ python3 "$SCRIPTS/clean_file.py" INPUT -o OUTPUT
 python3 "$SCRIPTS/clean_text.py" INPUT -o OUTPUT --stats
 python3 "$SCRIPTS/clean_image.py" INPUT -o OUTPUT --json
 ```
+
+`clean_file.py` does not clean or rewrite PDF files. Use `inspect_file.py` for
+PDF inspection.
 
 Default text cleaning removes only soft hyphen, zero width space, and byte
 order mark. It preserves joiners, direction controls, variation selectors,

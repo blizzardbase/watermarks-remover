@@ -51,7 +51,9 @@ def classify(path: Path, data: bytes) -> str:
         return "image"
     if detect_container_format(path, data) != "unknown":
         return "container"
-    return "text"
+    raise ValueError(
+        "unsupported file format; use --as text for explicit text input"
+    )
 
 
 def main() -> int:
@@ -85,22 +87,19 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    try:
-        input_data = read_bytes_input(args.path)
-    except (OSError, ValueError) as exc:
-        eprint(f"error: {exc}")
-        return 2
-
-    kind = (
-        args.force_type
-        if args.force_type != "auto"
-        else classify(args.path, input_data)
-    )
+    input_data = None
+    if not args.in_place:
+        try:
+            input_data = read_bytes_input(args.path)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
 
     expected_existing = None
     if args.in_place:
         try:
             bak, expected_existing = create_backup(args.path)
+            input_data = read_bytes_input(bak)
         except (OSError, ValueError) as exc:
             eprint(f"error: {exc}")
             return 2
@@ -114,14 +113,20 @@ def main() -> int:
             eprint("error: use --in-place when output is the input path")
             return 2
 
+    try:
+        kind = (
+            args.force_type
+            if args.force_type != "auto"
+            else classify(args.path, input_data)
+        )
+    except ValueError as exc:
+        eprint(f"error: {exc}")
+        return 2
+
+    source_data = input_data
+
     if kind == "text":
-        try:
-            text = read_bytes_input(src).decode(
-                "utf-8", errors="surrogateescape"
-            )
-        except (OSError, ValueError) as exc:
-            eprint(f"error: {exc}")
-            return 2
+        text = source_data.decode("utf-8", errors="surrogateescape")
         cleaned, stats = clean_text(
             text,
             nfkc=args.nfkc,
@@ -159,44 +164,46 @@ def main() -> int:
                 dest,
                 strip_all_metadata=args.strip_all_metadata,
                 expected_existing=expected_existing,
+                data=source_data,
             )
         except Exception as e:
             eprint(f"error: {e}")
             return 1
         result = {"kind": "image", **result}
+        residual = result["still_has_c2pa"] or result["still_has_ai_metadata"]
         if args.json:
             print(json.dumps(result, indent=2))
         else:
             eprint(f"wrote {result['output']} ({result['bytes_in']} -> {result['bytes_out']})")
             for a in result["actions"]:
                 eprint(f"  - {a}")
-            if result["still_has_c2pa"] or result["still_has_ai_metadata"]:
+            if residual:
                 eprint("warning: residual C2PA/AI signals may remain")
-                return 1
-        return 0
+        return 1 if residual else 0
 
     try:
         result = clean_container(
             src,
             dest,
             expected_existing=expected_existing,
+            data=source_data,
         )
     except Exception as e:
         eprint(f"error: {e}")
         return 1
     result = {"kind": "container", **result}
+    residual = result["still_has_c2pa"] or result["still_has_ai_metadata"]
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         eprint(f"wrote {result['output']} format={result['format']}")
         for a in result["actions"]:
             eprint(f"  - {a}")
-        if result["still_has_c2pa"] or result["still_has_ai_metadata"]:
+        if residual:
             eprint("warning: residual C2PA/AI signals may remain")
             for f in result.get("post_findings") or []:
                 eprint(f"  ! {f}")
-            return 1
-    return 0
+    return 1 if residual else 0
 
 
 if __name__ == "__main__":

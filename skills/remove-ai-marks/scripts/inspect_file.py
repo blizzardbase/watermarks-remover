@@ -56,7 +56,11 @@ def main() -> int:
         eprint(f"error: {exc}")
         return 2
 
-    kind = args.force_type if args.force_type != "auto" else classify(args.path, data)
+    try:
+        kind = args.force_type if args.force_type != "auto" else classify(args.path, data)
+    except ValueError as exc:
+        eprint(f"error: {exc}")
+        return 2
 
     if kind == "text":
         text = data.decode("utf-8", errors="surrogateescape")
@@ -69,7 +73,7 @@ def main() -> int:
         return 0 if report.suspicious_total == 0 else 1
 
     if kind == "image":
-        report = inspect_image(args.path)
+        report = inspect_image(args.path, data)
         if args.json:
             emit_json({"kind": "image", **report.to_dict()})
         else:
@@ -82,7 +86,7 @@ def main() -> int:
                 print(f"  - {f}")
         return 0 if not (report.has_c2pa or report.has_ai_metadata) else 1
 
-    report = inspect_container(args.path)
+    report = inspect_container(args.path, data)
     if args.json:
         emit_json({"kind": "container", **report.to_dict()})
     else:

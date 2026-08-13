@@ -123,8 +123,8 @@ provenance from content you may not alter. See
 
 1. File input is bounded before full processing.
 2. Symbolic link input and output are refused.
-3. Output uses atomic creation or verified replacement and refuses an existing
-   destination unless in place mode supplied its original file identity.
+3. New output uses exclusive creation. In place output uses atomic verified
+   replacement. Existing destinations are refused outside in place mode.
 4. Backups use exclusive names and never replace an earlier backup.
 5. Zip based formats have decompressed size and member count caps.
 6. Image and document cleaning is targeted by default.

@@ -12,7 +12,7 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from common import atomic_write_bytes, atomic_write_text, read_bytes_input
 from image_meta import AI_META_HINTS, C2PA_MARKERS
 
@@ -101,7 +101,7 @@ def detect_container_format(path: Path, data: bytes | None = None) -> str:
             # zip-based; sniff
             try:
                 with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                    names = set(zf.namelist())
+                    names = _zip_member_names(zf)
                     if "word/document.xml" in names:
                         return "docx"
                     if "content.xml" in names and "meta.xml" in names:
@@ -165,6 +165,8 @@ def _frontmatter_is_ai(key: str, value: str) -> bool:
         return True
     if normalized in CONTEXTUAL_FRONTMATTER_KEYS:
         return bool(AI_META_NAME_RE.search(value))
+    if AI_META_NAME_RE.search(normalized):
+        return True
     return False
 
 
@@ -300,9 +302,12 @@ def inspect_html(text: str) -> tuple[bool, bool, list[str], dict]:
     for m in _JSONLD_RE.finditer(text):
         try:
             parsed = json.loads(m.group("body"))
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError, RecursionError):
             continue
-        _cleaned, removed = _clean_jsonld_value(parsed)
+        try:
+            _cleaned, removed = _clean_jsonld_value(parsed)
+        except RecursionError:
+            continue
         if removed:
             has_ai = True
             findings.append(f"json-ld provenance fields: {', '.join(removed[:8])}")
@@ -330,13 +335,21 @@ def clean_html(text: str) -> tuple[str, list[str]]:
     def _jsonld_sub(m: re.Match[str]) -> str:
         try:
             parsed = json.loads(m.group("body"))
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError, RecursionError):
             return m.group(0)
-        cleaned, removed = _clean_jsonld_value(parsed)
+        try:
+            cleaned, removed = _clean_jsonld_value(parsed)
+        except RecursionError:
+            return m.group(0)
         if not removed:
             return m.group(0)
         actions.append(f"drop json-ld fields: {', '.join(removed[:8])}")
-        body = json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"))
+        body = (
+            json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"))
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+        )
         return f"{m.group('open')}{body}{m.group('close')}"
 
     out = _JSONLD_RE.sub(_jsonld_sub, out)
@@ -383,7 +396,8 @@ def clean_svg(data: bytes) -> tuple[bytes, list[str]]:
     text = data.decode("utf-8", errors="surrogateescape")
     def _metadata_sub(match: re.Match[str]) -> str:
         block = match.group(0)
-        if AI_META_NAME_RE.search(block):
+        _c2pa, has_ai, _hits = _blob_hits(block.encode("utf-8"))
+        if has_ai:
             actions.append("drop SVG metadata with AI or C2PA markers")
             return ""
         return block
@@ -403,7 +417,8 @@ def clean_svg(data: bytes) -> tuple[bytes, list[str]]:
     # Drop comments that look like provenance
     def _cmt(m: re.Match[str]) -> str:
         body = m.group(0)
-        if AI_META_NAME_RE.search(body):
+        _c2pa, has_ai, _hits = _blob_hits(body.encode("utf-8"))
+        if has_ai:
             actions.append("drop SVG comment with AI markers")
             return ""
         return body
@@ -434,8 +449,17 @@ def _check_zip_archive(zf: zipfile.ZipFile) -> None:
         )
 
 
+def _zip_member_names(zf: zipfile.ZipFile) -> set[str]:
+    infos = zf.infolist()
+    if len(infos) > MAX_ZIP_MEMBERS:
+        raise ValueError(
+            f"zip member count exceeds cap ({MAX_ZIP_MEMBERS}); refusing to process"
+        )
+    return {info.filename for info in infos}
+
+
 def _check_zip_budget(info: zipfile.ZipInfo, budget: list[int]) -> None:
-    """Reject zip bombs before decompression (ZipInfo.file_size is stored)."""
+    """Bound archive supplied declared decompressed sizes."""
     if info.file_size < 0:
         raise ValueError("zip member reports a negative size")
     budget[0] += info.file_size
@@ -446,16 +470,36 @@ def _check_zip_budget(info: zipfile.ZipInfo, budget: list[int]) -> None:
         )
 
 
+def _read_member(
+    zf: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    actual_budget: list[int],
+) -> bytes:
+    remaining = MAX_ZIP_DECOMPRESSED_BYTES - actual_budget[0]
+    if remaining < 0:
+        raise ValueError("zip decompressed size exceeds cap; refusing to process")
+    with zf.open(info) as handle:
+        data = handle.read(remaining + 1)
+    if len(data) > remaining:
+        raise ValueError(
+            f"zip member {info.filename} exceeds the remaining decompressed cap"
+        )
+    actual_budget[0] += len(data)
+    return data
+
+
 def inspect_docx(data: bytes) -> tuple[bool, bool, list[str], dict]:
     findings: list[str] = []
     has_c2pa = False
     has_ai = False
     parts: list[str] = []
     budget = [0]
+    actual_budget = [0]
+    details_preserved: list[dict[str, Any]] = []
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             _check_zip_archive(zf)
-            parts = zf.namelist()
+            parts = [info.filename for info in zf.infolist()]
             for info in zf.infolist():
                 _check_zip_budget(info, budget)
                 name = info.filename.lower()
@@ -466,9 +510,22 @@ def inspect_docx(data: bytes) -> tuple[bool, bool, list[str], dict]:
                     or "provenance" in name
                 ):
                     continue
-                raw = zf.read(info)
+                raw = _read_member(
+                    zf,
+                    info,
+                    actual_budget,
+                )
                 c2, ai, hits = _blob_hits(raw)
                 if c2 or ai:
+                    if name.startswith("customxml/"):
+                        preserved = {
+                            "part": info.filename,
+                            "has_c2pa": c2,
+                            "has_ai_metadata": ai,
+                            "findings": hits[:6],
+                        }
+                        details_preserved.append(preserved)
+                        continue
                     if c2:
                         has_c2pa = True
                     if ai:
@@ -480,13 +537,17 @@ def inspect_docx(data: bytes) -> tuple[bool, bool, list[str], dict]:
                 findings.append(f"customXml parts: {len(custom)}")
     except zipfile.BadZipFile:
         return False, False, ["not a valid DOCX zip"], {}
-    return has_c2pa, has_ai or has_c2pa, findings, {"parts": len(parts)}
+    return has_c2pa, has_ai or has_c2pa, findings, {
+        "parts": len(parts),
+        "preserved_custom_xml_signals": details_preserved,
+    }
 
 
 def clean_docx(data: bytes) -> tuple[bytes, list[str]]:
     actions: list[str] = []
     out_buf = io.BytesIO()
     budget = [0]
+    actual_budget = [0]
     with zipfile.ZipFile(io.BytesIO(data)) as zin, zipfile.ZipFile(
         out_buf, "w", compression=zipfile.ZIP_DEFLATED
     ) as zout:
@@ -494,7 +555,11 @@ def clean_docx(data: bytes) -> tuple[bytes, list[str]]:
         for info in zin.infolist():
             name = info.filename
             _check_zip_budget(info, budget)
-            raw = zin.read(info)
+            raw = _read_member(
+                zin,
+                info,
+                actual_budget,
+            )
             if name in DOCX_META_PARTS or name.startswith("docProps/"):
                 text = raw.decode("utf-8", errors="replace")
                 # Scrub known AI generator fields via simple regex on XML text nodes
@@ -549,6 +614,7 @@ def inspect_odt(data: bytes) -> tuple[bool, bool, list[str], dict]:
     has_c2pa = False
     has_ai = False
     budget = [0]
+    actual_budget = [0]
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             _check_zip_archive(zf)
@@ -561,7 +627,11 @@ def inspect_odt(data: bytes) -> tuple[bool, bool, list[str], dict]:
                     "meta-inf/documentsignatures.xml",
                 } and "c2pa" not in name and "provenance" not in name:
                     continue
-                raw = zf.read(info)
+                raw = _read_member(
+                    zf,
+                    info,
+                    actual_budget,
+                )
                 c2, ai, hits = _blob_hits(raw)
                 if c2 or ai:
                     if c2:
@@ -578,6 +648,7 @@ def clean_odt(data: bytes) -> tuple[bytes, list[str]]:
     actions: list[str] = []
     out_buf = io.BytesIO()
     budget = [0]
+    actual_budget = [0]
     with zipfile.ZipFile(io.BytesIO(data)) as zin, zipfile.ZipFile(
         out_buf, "w", compression=zipfile.ZIP_DEFLATED
     ) as zout:
@@ -585,7 +656,11 @@ def clean_odt(data: bytes) -> tuple[bytes, list[str]]:
         for info in zin.infolist():
             name = info.filename
             _check_zip_budget(info, budget)
-            raw = zin.read(info)
+            raw = _read_member(
+                zin,
+                info,
+                actual_budget,
+            )
             if name == "meta.xml":
                 text = raw.decode("utf-8", errors="replace")
                 def _generator(match: re.Match[str]) -> str:
@@ -646,7 +721,7 @@ def inspect_pdf(_path: Path, data: bytes) -> tuple[bool, bool, list[str], dict]:
     return has_c2pa, has_ai or has_c2pa, findings, {}
 
 
-def clean_pdf(_path: Path, _dest: Path) -> tuple[list[str], dict]:
+def clean_pdf(_path: Path, _dest: Path) -> NoReturn:
     """Refuse PDF rewriting because byte deletion can corrupt cross references."""
     raise ValueError(
         "PDF cleaning is disabled in the hardened fork; inspect only and use a separately audited PDF tool"
@@ -657,8 +732,12 @@ def clean_pdf(_path: Path, _dest: Path) -> tuple[list[str], dict]:
 # Unified API
 # ---------------------------------------------------------------------------
 
-def inspect_container(path: Path) -> ContainerInspectReport:
-    data = read_bytes_input(path)
+def inspect_container(
+    path: Path,
+    data: bytes | None = None,
+) -> ContainerInspectReport:
+    if data is None:
+        data = read_bytes_input(path)
     fmt = detect_container_format(path, data)
     details: dict[str, Any] = {}
 
@@ -695,11 +774,13 @@ def clean_container(
     *,
     also_layer_a_text: bool = True,
     expected_existing: tuple[int, int] | None = None,
+    data: bytes | None = None,
 ) -> dict[str, Any]:
     """Clean container metadata; optionally Layer-A scrub text bodies for md/html."""
     from text_unicode import clean_text  # local import to avoid cycles
 
-    data = read_bytes_input(path)
+    if data is None:
+        data = read_bytes_input(path)
     fmt = detect_container_format(path, data)
     actions: list[str] = []
     meta: dict[str, Any] = {"format": fmt}
@@ -708,8 +789,7 @@ def clean_container(
         cleaned, actions = clean_svg(data)
         atomic_write_bytes(cleaned, dest, expected_existing=expected_existing)
     elif fmt == "pdf":
-        actions, meta_extra = clean_pdf(path, dest)
-        meta.update(meta_extra)
+        clean_pdf(path, dest)
     elif fmt == "docx":
         cleaned, actions = clean_docx(data)
         atomic_write_bytes(cleaned, dest, expected_existing=expected_existing)
@@ -741,7 +821,16 @@ def clean_container(
     else:
         raise ValueError(f"unsupported container format: {fmt}")
 
-    after = inspect_container(dest)
+    if fmt in {"svg", "docx", "odt"}:
+        output_data = cleaned
+    else:
+        output_data = text.encode("utf-8", errors="surrogateescape")
+    after = inspect_container(dest, output_data)
+    if fmt == "docx":
+        meta["preserved_custom_xml_signals"] = after.details.get(
+            "preserved_custom_xml_signals",
+            [],
+        )
     return {
         "input": str(path),
         "output": str(dest),

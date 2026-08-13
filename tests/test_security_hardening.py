@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills" / "remove-ai-marks" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+import common  # noqa: E402
 from common import atomic_write_text, create_backup, read_bytes_input  # noqa: E402
 from container_meta import (  # noqa: E402
     MAX_ZIP_DECOMPRESSED_BYTES,
@@ -30,6 +31,16 @@ def test_rejects_symbolic_link_input(tmp_path: Path):
     link.symlink_to(target)
     with pytest.raises(ValueError, match="symbolic link"):
         read_bytes_input(link)
+
+
+def test_file_reads_fail_closed_without_no_follow(tmp_path: Path, monkeypatch):
+    source = tmp_path / "source.txt"
+    source.write_text("data", encoding="utf-8")
+    monkeypatch.delattr(common.os, "O_NOFOLLOW", raising=False)
+    with pytest.raises(ValueError, match="secure file opening"):
+        read_bytes_input(source)
+    with pytest.raises(ValueError, match="secure file opening"):
+        create_backup(source)
 
 
 def test_rejects_symbolic_link_output(tmp_path: Path):
@@ -69,6 +80,12 @@ def test_atomic_write_refuses_existing_output_without_in_place_identity(tmp_path
     with pytest.raises(ValueError, match="without in place mode"):
         atomic_write_text("new", output)
     assert output.read_text(encoding="utf-8") == "old"
+
+
+def test_atomic_write_creates_new_output(tmp_path: Path):
+    output = tmp_path / "output.txt"
+    atomic_write_text("new", output)
+    assert output.read_text(encoding="utf-8") == "new"
 
 
 def test_atomic_write_refuses_changed_in_place_target(tmp_path: Path):

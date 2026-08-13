@@ -104,6 +104,17 @@ def test_html_jsonld_removes_only_provenance_field():
     assert any("json-ld" in action for action in actions)
 
 
+def test_html_jsonld_escapes_script_terminator():
+    html = (
+        '<script type="application/ld+json">'
+        '{"name":"a<\\/script><script>x<\\/script>","generator":"ChatGPT"}'
+        "</script>"
+    )
+    cleaned, _actions = clean_html(html)
+    assert cleaned.count("<script") == 1
+    assert "</script>" not in cleaned[: cleaned.rindex("</script>")]
+
+
 def test_svg_metadata():
     svg = b"""<?xml version="1.0"?>
 <svg xmlns="http://www.w3.org/2000/svg">
@@ -126,6 +137,15 @@ def test_svg_preserves_generic_metadata():
     assert not has_ai
     assert cleaned == svg
     assert actions == ["no SVG metadata removed"]
+
+
+def test_svg_inspect_and_clean_share_marker_source():
+    svg = b"<svg><metadata>trainedAlgorithmicMedia</metadata></svg>"
+    _has_c2pa, has_ai, _findings, _details = inspect_svg(svg)
+    cleaned, actions = clean_svg(svg)
+    assert has_ai
+    assert b"trainedAlgorithmicMedia" not in cleaned
+    assert actions
 
 
 def _make_docx_with_app(app_name: str = "Claude AI Writer") -> bytes:
@@ -156,10 +176,10 @@ def _make_docx_with_app(app_name: str = "Claude AI Writer") -> bytes:
     return buf.getvalue()
 
 
-def test_docx_strips_app_and_preserves_customxml(tmp_path: Path):
+def test_docx_strips_app_and_preserves_customxml():
     data = _make_docx_with_app()
     cleaned, actions = clean_docx(data)
-    assert any("customXml" in a or "Application" in a or "drop" in a for a in actions)
+    assert "scrub docProps/app.xml field Application" in actions
     with zipfile.ZipFile(io.BytesIO(cleaned)) as zf:
         names = zf.namelist()
         assert "word/document.xml" in names
@@ -167,6 +187,18 @@ def test_docx_strips_app_and_preserves_customxml(tmp_path: Path):
         assert b"c2pa contentcredentials" in zf.read("customXml/item1.xml")
         app = zf.read("docProps/app.xml").decode()
         assert "Claude" not in app
+
+
+def test_docx_reports_preserved_customxml_separately(tmp_path: Path):
+    src = tmp_path / "source.docx"
+    dest = tmp_path / "cleaned.docx"
+    src.write_bytes(_make_docx_with_app())
+    result = clean_container(src, dest)
+    assert not result["still_has_c2pa"]
+    assert not result["still_has_ai_metadata"]
+    preserved = result["meta"]["preserved_custom_xml_signals"]
+    assert preserved
+    assert preserved[0]["part"] == "customXml/item1.xml"
 
 
 def _make_odt(generator: str = "Anthropic Claude") -> bytes:
