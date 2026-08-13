@@ -120,7 +120,7 @@ Before merge, close the pull request and delete the feature branch. After merge,
 3. 13 August 2026: Removed external execution and dependency paths. Added conservative defaults, bounded input, atomic output, exclusive backups, archive limits, and targeted container cleaning.
 4. 13 August 2026: Added repository context files, updated behavior documentation, pinned continuous integration actions, and added a hash locked development manifest.
 5. 13 August 2026: Completed 45 focused tests, offline smoke checks, syntax parsing, static execution surface searches, ignore checks, and whitespace verification locally.
-6. 13 August 2026: Opened pull request 1. Continuous integration passed. CodeRabbit found 11 actionable issues plus six low value notes. All valid findings were addressed, including credential persistence, read races, output races, nested JSON safety, archive bounds, snapshot reuse, residual status handling, unknown binary rejection, and preserved DOCX signal reporting. The focused suite now contains 51 passing tests.
+6. 13 August 2026: Opened pull request 1. Continuous integration passed. CodeRabbit found 11 actionable issues plus six lower priority notes. All valid findings were addressed, including credential persistence, read races, output races, nested JSON safety, archive bounds, snapshot reuse, residual status handling, unknown binary rejection, and preserved DOCX signal reporting. The focused suite now contains 51 passing tests.
 7. 13 August 2026: CodeRabbit rechecked the fixes and found one additional major reporting issue. DOCX inspection now reports preserved custom XML signals honestly while cleanup status excludes only those intentionally preserved parts. Unexpected residual metadata still fails cleanup status.
 
 ## Discoveries
@@ -143,7 +143,9 @@ Before merge, close the pull request and delete the feature branch. After merge,
 
 ## Push inspection log
 
-No push yet.
+1. Before commit `2378529`, inspected the complete diff, secret patterns, ignored secret filenames, static execution surfaces, and unrelated changes. Pushed the initial hardening branch.
+2. Before commit `1418c25`, inspected the review fix diff and reran 50 tests, offline smoke checks, syntax parsing, static execution surface searches, secret searches, and whitespace verification. Pushed the reviewed fixes.
+3. Before commit `8eb38fa`, inspected the DOCX reporting fix and reran 51 tests, offline smoke checks, secret searches, and whitespace verification. Pushed the second review fix.
 
 ## Outcomes
 
