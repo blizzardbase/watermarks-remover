@@ -12,7 +12,7 @@ What problem does this solve? Who is affected?
 
 ## Proposal
 
-Describe the feature. Examples: new file types, stronger Layer A rules, better inspect output, agent install helpers, docs.
+Describe the feature. Examples: new file types, safer Unicode rules, better inspect output, or documentation.
 
 ## Alternatives
 

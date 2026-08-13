@@ -1,78 +1,45 @@
-# Contributing to watermarks-remover
+# Contributing
 
-Thanks for helping keep the skill accurate and the cleaners reliable. The
-project is a small Python skill (`skills/remove-ai-marks/`) plus tests —
-focused PRs land fastest.
+This fork accepts focused safety, correctness, documentation, and format
+support changes.
 
-## Who can do what
+## Requirements
 
-| Action | Who |
+1. Python 3.10 or newer.
+2. No runtime package dependency.
+3. A feature branch and pull request.
+4. Passing tests and offline smoke checks.
+5. Review by `@blizzardbase` before merge.
+
+Set up the hash locked development environment:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
+python3 -m pytest -q
+make smoke
+```
+
+## Repository layout
+
+| Path | Purpose |
 | --- | --- |
-| Open issues | Anyone |
-| Suggest a release | Anyone (use the **Release suggestion** issue template) |
-| Open pull requests | Anyone (fork the repo) |
-| Approve and merge pull requests | Maintainer only (`@guillaumemeyer`) |
+| `skills/remove-ai-marks/SKILL.md` | Agent workflow and safety boundary |
+| `skills/remove-ai-marks/scripts/` | Local inspection and cleaning scripts |
+| `skills/remove-ai-marks/references/` | Use boundary and supported behavior |
+| `tests/` | Safety and correctness tests |
+| `context.md` | Current implementation contract |
 
-`main` is protected. A change needs a pull request, a passing **CI** check
-(`test`), and an approving review from the code owner before merge. Only the
-maintainer can give that approval. Direct pushes to `main` are blocked for
-non-admins.
+## Change rules
 
-To suggest a release without a code change: open a **Release suggestion**
-issue.
+1. Preserve the invariants in `AGENTS.md` and `CLAUDE.md`.
+2. Add or update focused tests.
+3. Update every affected behavior document in the same pull request.
+4. Keep default cleaning conservative.
+5. Do not add network calls, credentials, installers, subprocess execution,
+   external detectors, or runtime packages.
+6. Do not commit private documents, credentials, or large binary fixtures.
+7. Inspect the full diff and run `git diff --check` before push.
 
-## Prerequisites
-
-- **Python 3.10+** (stdlib only for the skill scripts; optional rewrite backends
-  use HTTP to local Ollama / OpenAI-compatible endpoints)
-- From the repo root: `python3 -m pytest -q` should pass before you open a PR
-- Optional for manual file checks: [`c2patool`](https://github.com/contentauth/c2pa-rs/tree/main/cli), [`exiftool`](https://exiftool.org/) (PDF)
-
-## Layout
-
-| Path | Role |
-| --- | --- |
-| `skills/remove-ai-marks/SKILL.md` | Agent skill entry (workflow, ethics) |
-| `skills/remove-ai-marks/scripts/` | Layer A/B hooks + image/container cleaners |
-| `skills/remove-ai-marks/references/` | Vendors, mark classes, matrix, ethics |
-| `tests/` | Pytest suite and fixtures |
-| `.github/workflows/ci.yml` | CI job `test` |
-
-## Layers (what to change where)
-
-1. **Layer A (Unicode / format controls)** — deterministic scripts under
-   `scripts/` (`text_unicode.py`, `clean_text.py`, `inspect_text.py`). Prefer
-   tests with fixtures in `tests/fixtures/`.
-2. **Layer B (statistical rewrite)** — guidance in `SKILL.md` plus optional
-   `rewrite_text.py` (print-prompt default; ollama / openai-compatible). No
-   bundled model. Keep ethics-aware.
-3. **Files (C2PA / EXIF / XMP / props)** — `image_meta.py` (PNG/JPEG),
-   `container_meta.py` (SVG/PDF/DOCX/ODT/HTML/MD), unified
-   `inspect_file.py` / `clean_file.py`. Preserve document body / pixels;
-   strip provenance metadata only.
-
-## Checklist for a change
-
-- [ ] Behaviour matches `SKILL.md` / `references/removal-matrix.md` when relevant
-- [ ] Unit tests updated or added under `tests/`
-- [ ] `python3 -m pytest -q` passes
-- [ ] Docs updated (README and/or skill references) if user-facing behaviour
-      changes
-- [ ] No drive-by refactors unrelated to the fix or feature
-
-## PR expectations
-
-- Stay focused and match existing style (stdlib-first scripts, clear CLI flags)
-- Do not commit secrets, private user files, or large binary fixtures unless
-  needed and redacted
-- Respect `references/ethics.md`: this tool is for content the user owns
-
-Questions? Open an issue describing the input type (text / image / document)
-and which layer failed or is missing.
-
-## Community
-
-- [Code of Conduct](CODE_OF_CONDUCT.md) — expected behaviour in the project
-- [Security policy](SECURITY.md) — how to report vulnerabilities privately
-- [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) and
-  [feature request](.github/ISSUE_TEMPLATE/feature_request.md) templates
+Use the bug and feature issue templates for reports that do not yet have a
+code change.

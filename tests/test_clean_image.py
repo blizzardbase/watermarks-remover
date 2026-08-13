@@ -74,3 +74,39 @@ def test_clean_image_roundtrip(tmp_path: Path):
     result = clean_image(src, dest)
     assert dest.is_file()
     assert result["bytes_out"] > 0
+
+
+def test_default_png_clean_preserves_unrelated_text_metadata():
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    data = (
+        sig
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"tEXt", b"Artist\x00A Person")
+        + _png_chunk(b"IEND", b"")
+    )
+    cleaned, _actions = strip_png(data)
+    assert b"Artist\x00A Person" in cleaned
+    fully_cleaned, _actions = strip_png(data, strip_all_text=True)
+    assert b"Artist\x00A Person" not in fully_cleaned
+
+
+def test_default_jpeg_clean_preserves_unrelated_app_and_comment():
+    app1 = b"Exif\x00\x00camera data"
+    comment = b"family archive"
+    data = (
+        b"\xff\xd8"
+        + b"\xff\xe1"
+        + struct.pack(">H", len(app1) + 2)
+        + app1
+        + b"\xff\xfe"
+        + struct.pack(">H", len(comment) + 2)
+        + comment
+        + b"\xff\xd9"
+    )
+    cleaned, _actions = strip_jpeg(data)
+    assert app1 in cleaned
+    assert comment in cleaned
+    fully_cleaned, _actions = strip_jpeg(data, strip_all_app=True)
+    assert app1 not in fully_cleaned
+    assert comment not in fully_cleaned

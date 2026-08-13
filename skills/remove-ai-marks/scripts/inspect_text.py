@@ -25,7 +25,11 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    text = read_text_input(args.path)
+    try:
+        text = read_text_input(args.path)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     report = inspect_text(text, aggressive=args.aggressive)
     if args.json:
         emit_json(report.to_dict())

@@ -1,61 +1,30 @@
 # Mark classes
 
-## 1. Edit-based text (Unicode / rules)
+## Invisible Unicode
 
-Invisible or near-invisible characters, exotic spaces, bidi controls, tag characters, synonym tables.
+These characters can be accidental, required for language shaping, or used as
+an edit based carrier. Inspection reports all suspicious classes. Default
+cleaning removes only the narrow safe set documented in `SKILL.md`.
 
-| Inspect kinds (Layer A) | Examples |
-| --- | --- |
-| `zwj_family` | ZWSP, ZWNJ, ZWJ, WJ, BOM |
-| `bidi` | LRE/RLO/LRI/… |
-| `tag_chars` | U+E0001–U+E007F |
-| `variation_selector` | VS1–VS256 |
-| `space` | NBSP, em space, ideographic space |
-| `confusable` | Cyrillic/fullwidth Latin (aggressive) |
+## File provenance metadata
 
-**Removal:** `clean_text.py` / Layer A — deterministic, verifiable.
+PNG, JPEG, SVG, DOCX, ODT, HTML, and Markdown can contain machine readable
+provenance or generator fields. Default cleaning is targeted and preserves
+unrelated metadata. PDF is inspection only.
 
-Maps to Nature paper “edit-based watermarking.”
+## Statistical text signals
 
-## 2. Generative / statistical text (token sampling)
+A statistical signal can live in word choice rather than a character or file
+field. This skill has no detector for that class and makes no removal claim.
+An ordinary rewrite can change wording, but it can also change meaning.
 
-Bias next-token sampling toward a pseudo-random green list / score (Kirchenbauer, SynthID-Text / Tournament sampling, etc.). Signal lives in **word choice**, not metadata.
+## Media signals and soft binding
 
-**Removal:** Layer B rewrite (paraphrase → back-translate → structural). Best-effort; no gold cert without vendor detector/key.
+An image, audio, or video signal can live in the content rather than metadata.
+Removing file metadata does not remove such a signal. This skill has no media
+signal detector or remover.
 
-Maps to Nature paper primary method (SynthID-Text).
+## Private and training based signals
 
-## 3. Data-driven / backdoor
-
-Model trained or fine-tuned so trigger prompts produce marked or identifiable behavior.
-
-**Out of scope** for this skill (model-side).
-
-## 4. File provenance metadata (C2PA / EXIF / XMP / props)
-
-Signed Content Credentials and AI generator tags in containers (hard-bound to the file: JUMBF/APP11, PNG chunks, XMP packets, OOXML props, etc.).
-
-Industry framing (C2PA + SynthID two-layer model; see Institute of AI PM guide in README references):
-
-| Layer | Mechanism | Survives metadata strip? | This project |
-| --- | --- | --- | --- |
-| **Hard-bound C2PA** | Signed manifest *in* the file | No — strip/re-encode drops it | **In scope** — `clean_file` / `clean_image` |
-| **Soft binding** | Imperceptible watermark *in content* that can resolve to a remote manifest | Yes (by design) | **Out of scope** — pixel/audio/video signal |
-| **Standalone SynthID-class** | Pixel / waveform / token watermark without needing C2PA | Yes for media; text is weaker | Media OOS; text → Layer B best-effort |
-
-| Format | Support |
-| --- | --- |
-| PNG / JPEG | Full strip (stdlib + optional exiftool) |
-| SVG | Drop metadata/XMP blocks |
-| PDF | Prefer exiftool; degraded stdlib XMP strip |
-| DOCX / ODT | Scrub zip XML props / customXml |
-| HTML | Meta generator / JSON-LD / data-ai* |
-| Markdown | YAML frontmatter AI keys |
-
-**Removal:** `clean_file.py` / `clean_image.py` — usually verifiable by re-inspect.
-
-**Honest report:** after a successful C2PA strip, soft-bound / pixel SynthID (if the generator used them) may still be detectable by vendor tools (e.g. SynthID Detector, Content Credentials verify sites).
-
-## 5. Pixel-domain image (and audio/video) watermarks
-
-Invisible media marks (e.g. SynthID for images/audio/video) and C2PA **soft binding** that lives in the signal, not the metadata. **Out of scope.**
+Private vendor detectors, secret keyed systems, and model training backdoors
+are outside scope.

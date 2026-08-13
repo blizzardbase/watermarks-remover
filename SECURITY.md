@@ -1,56 +1,28 @@
-# Security Policy
+# Security policy
 
-## Supported versions
+## Supported version
 
-Security fixes target the latest code on the `main` branch and the most recent
-GitHub Release (when releases exist). Older tags are not maintained.
+Security fixes target the latest code on `main`. Installations should use an
+exact reviewed commit from the Blizzardbase fork.
 
-## Reporting a vulnerability
+## Private reporting
 
-**Do not open a public issue for security problems.**
+Do not open a public issue for a vulnerability. Use
+[GitHub Security Advisories](https://github.com/blizzardbase/watermarks-remover/security/advisories/new)
+and include impact, reproduction steps, and the affected commit.
 
-Please report vulnerabilities privately using one of:
+## Important report classes
 
-1. **[GitHub Security Advisories](https://github.com/guillaumemeyer/watermarks-remover/security/advisories/new)**
-   (preferred) — "Report a vulnerability" on the repository Security tab
-2. A private message to the repository maintainers via GitHub
+1. A path escape or unintended file overwrite.
+2. A symbolic link bypass.
+3. Resource exhaustion on a crafted file or archive.
+4. A network, process, credential, or installer path in the installed skill.
+5. Corruption or deletion of legitimate document content under default use.
+6. Exposure of private file content through output or diagnostics.
 
-Include:
+Third party detector accuracy and requests to evade disclosure are outside the
+security scope. The ethical use boundary is documented in
+`skills/remove-ai-marks/references/ethics.md`.
 
-- A description of the issue and its impact
-- Steps to reproduce or a proof of concept when safe to share
-- Affected version or commit if known
-
-## What to expect
-
-- Acknowledgement when a maintainer has seen the report
-- An initial assessment of severity and scope
-- A coordinated fix and disclosure timeline when the report is valid
-
-We will not take legal action against good-faith research that follows this
-policy and avoids privacy harm, service disruption, or data destruction.
-
-## Scope notes for watermarks-remover
-
-watermarks-remover is a local agent skill and a set of Python scripts that
-inspect and clean text and image files. Reports that matter most include:
-
-- Path traversal or unsafe writes outside intended output paths
-- Command injection when optional tools (`c2patool`, `exiftool`) are invoked
-- Parser crashes or resource exhaustion on crafted images/text that affect
-  the host beyond normal process failure
-- Accidental leakage of user file contents in logs, error messages, or
-  diagnostics that ship with the skill
-
-Out of scope (unless they cause a concrete security impact in this project):
-
-- Bypassing AI provenance marks for fraud, copyright evasion, or illegal
-  non-disclosure (see skill `references/ethics.md`)
-- Issues only in third-party tools (`c2patool`, `exiftool`, agents)
-- Social engineering of individual users
-
-## Prefer private disclosure
-
-After a fix is released, we may credit reporters who want public credit.
-Do not publish exploit details until a fixed release is available, unless we
-agree otherwise.
+Good faith research that avoids privacy harm, service disruption, and data
+destruction is welcome. Coordinate disclosure until a fix is available.

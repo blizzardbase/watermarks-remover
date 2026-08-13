@@ -5,18 +5,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import cleaned_path, eprint  # noqa: E402
+from common import (  # noqa: E402
+    atomic_write_text,
+    cleaned_path,
+    create_backup,
+    eprint,
+    read_bytes_input,
+)
 from container_meta import clean_container, detect_container_format  # noqa: E402
 from image_meta import clean_image, detect_format as detect_image_format  # noqa: E402
 from text_unicode import clean_text  # noqa: E402
-
-MAX_INPUT_BYTES = int(os.environ.get("WATERMARKS_MAX_INPUT_BYTES", str(1 << 30)))
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 CONTAINER_EXTS = {".svg", ".pdf", ".docx", ".odt", ".html", ".htm", ".md", ".markdown", ".mdx"}
@@ -36,7 +39,7 @@ TEXT_EXTS = {
 }
 
 
-def classify(path: Path) -> str:
+def classify(path: Path, data: bytes) -> str:
     ext = path.suffix.lower()
     if ext in IMAGE_EXTS:
         return "image"
@@ -44,12 +47,13 @@ def classify(path: Path) -> str:
         return "container"
     if ext in TEXT_EXTS:
         return "text"
-    data = path.read_bytes()
     if detect_image_format(data) in ("png", "jpeg"):
         return "image"
     if detect_container_format(path, data) != "unknown":
         return "container"
-    return "text"
+    raise ValueError(
+        "unsupported file format; use --as text for explicit text input"
+    )
 
 
 def main() -> int:
@@ -61,9 +65,19 @@ def main() -> int:
     p.add_argument("--nfkc", action="store_true", help="Text: NFKC normalize")
     p.add_argument("--aggressive-homoglyphs", action="store_true")
     p.add_argument(
-        "--keep-non-ai-metadata",
+        "--strip-all-metadata",
         action="store_true",
-        help="Images: only drop C2PA/AI-looking segments",
+        help="Images: also drop unrelated metadata segments",
+    )
+    p.add_argument(
+        "--normalize-spaces",
+        action="store_true",
+        help="Text: rewrite special spaces to U+0020",
+    )
+    p.add_argument(
+        "--aggressive-unicode",
+        action="store_true",
+        help="Text: also remove joiners, direction controls, tags, and variation selectors",
     )
     p.add_argument(
         "--as",
@@ -73,34 +87,62 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    if not args.path.is_file():
-        eprint(f"not a file: {args.path}")
-        return 2
+    input_data = None
+    if not args.in_place:
+        try:
+            input_data = read_bytes_input(args.path)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
 
-    if args.path.stat().st_size > MAX_INPUT_BYTES:
-        eprint(f"refusing input larger than {MAX_INPUT_BYTES} bytes: {args.path}")
-        return 2
-
-    kind = args.force_type if args.force_type != "auto" else classify(args.path)
-
+    expected_existing = None
     if args.in_place:
-        bak = args.path.with_suffix(args.path.suffix + ".bak")
-        bak.write_bytes(args.path.read_bytes())
+        try:
+            bak, expected_existing = create_backup(args.path)
+            input_data = read_bytes_input(bak)
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
+        eprint(f"backup={bak}")
         dest = args.path
         src = bak
     else:
         src = args.path
         dest = args.output or cleaned_path(args.path)
+        if dest.absolute() == args.path.absolute():
+            eprint("error: use --in-place when output is the input path")
+            return 2
+
+    try:
+        kind = (
+            args.force_type
+            if args.force_type != "auto"
+            else classify(args.path, input_data)
+        )
+    except ValueError as exc:
+        eprint(f"error: {exc}")
+        return 2
+
+    source_data = input_data
 
     if kind == "text":
-        text = src.read_text(encoding="utf-8", errors="surrogateescape")
+        text = source_data.decode("utf-8", errors="surrogateescape")
         cleaned, stats = clean_text(
             text,
             nfkc=args.nfkc,
             aggressive_homoglyphs=args.aggressive_homoglyphs,
+            normalize_spaces=args.normalize_spaces,
+            aggressive_unicode=args.aggressive_unicode,
         )
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(cleaned, encoding="utf-8")
+        try:
+            atomic_write_text(
+                cleaned,
+                dest,
+                expected_existing=expected_existing,
+            )
+        except (OSError, ValueError) as exc:
+            eprint(f"error: {exc}")
+            return 2
         result = {
             "kind": "text",
             "input": str(args.path),
@@ -120,44 +162,48 @@ def main() -> int:
             result = clean_image(
                 src,
                 dest,
-                strip_all_metadata=not args.keep_non_ai_metadata,
+                strip_all_metadata=args.strip_all_metadata,
+                expected_existing=expected_existing,
+                data=source_data,
             )
         except Exception as e:
             eprint(f"error: {e}")
             return 1
         result = {"kind": "image", **result}
+        residual = result["still_has_c2pa"] or result["still_has_ai_metadata"]
         if args.json:
             print(json.dumps(result, indent=2))
         else:
             eprint(f"wrote {result['output']} ({result['bytes_in']} -> {result['bytes_out']})")
             for a in result["actions"]:
                 eprint(f"  - {a}")
-            if result["still_has_c2pa"] or result["still_has_ai_metadata"]:
+            if residual:
                 eprint("warning: residual C2PA/AI signals may remain")
-                return 1
-        return 0
+        return 1 if residual else 0
 
     try:
-        result = clean_container(src, dest)
+        result = clean_container(
+            src,
+            dest,
+            expected_existing=expected_existing,
+            data=source_data,
+        )
     except Exception as e:
         eprint(f"error: {e}")
         return 1
     result = {"kind": "container", **result}
+    residual = result["still_has_c2pa"] or result["still_has_ai_metadata"]
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         eprint(f"wrote {result['output']} format={result['format']}")
         for a in result["actions"]:
             eprint(f"  - {a}")
-        if result["still_has_c2pa"] or result["still_has_ai_metadata"]:
+        if residual:
             eprint("warning: residual C2PA/AI signals may remain")
             for f in result.get("post_findings") or []:
                 eprint(f"  ! {f}")
-            # degraded PDF copy is not a hard failure if we only warn
-            if result.get("meta", {}).get("degraded"):
-                return 0
-            return 1
-    return 0
+    return 1 if residual else 0
 
 
 if __name__ == "__main__":
