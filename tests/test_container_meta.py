@@ -199,6 +199,23 @@ def test_docx_reports_preserved_customxml_separately(tmp_path: Path):
     preserved = result["meta"]["preserved_custom_xml_signals"]
     assert preserved
     assert preserved[0]["part"] == "customXml/item1.xml"
+    report = inspect_container(dest)
+    assert report.has_c2pa
+    assert report.has_ai_metadata
+    assert any("preserved (not removed)" in item for item in report.findings)
+
+
+def test_docx_unexpected_residual_still_fails_clean_status(tmp_path: Path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("word/document.xml", "<w:document/>")
+        zf.writestr("docProps/other.xml", "<root>c2pa</root>")
+        zf.writestr("customXml/item1.xml", "<root>c2pa</root>")
+    src = tmp_path / "source.docx"
+    dest = tmp_path / "cleaned.docx"
+    src.write_bytes(buf.getvalue())
+    result = clean_container(src, dest)
+    assert result["still_has_c2pa"]
 
 
 def _make_odt(generator: str = "Anthropic Claude") -> bytes:

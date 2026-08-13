@@ -525,6 +525,14 @@ def inspect_docx(data: bytes) -> tuple[bool, bool, list[str], dict]:
                             "findings": hits[:6],
                         }
                         details_preserved.append(preserved)
+                        if c2:
+                            has_c2pa = True
+                        if ai:
+                            has_ai = True
+                        findings.append(
+                            f"preserved (not removed) {info.filename}: "
+                            f"{', '.join(hits[:6])}"
+                        )
                         continue
                     if c2:
                         has_c2pa = True
@@ -827,10 +835,35 @@ def clean_container(
         output_data = text.encode("utf-8", errors="surrogateescape")
     after = inspect_container(dest, output_data)
     if fmt == "docx":
-        meta["preserved_custom_xml_signals"] = after.details.get(
+        preserved = after.details.get(
             "preserved_custom_xml_signals",
             [],
         )
+        meta["preserved_custom_xml_signals"] = preserved
+        expected_c2pa_findings = {
+            marker
+            for item in preserved
+            if item.get("has_c2pa")
+            for marker in item.get("findings", [])
+        }
+        expected_ai_findings = {
+            marker
+            for item in preserved
+            if item.get("has_ai_metadata")
+            for marker in item.get("findings", [])
+        }
+        unexpected_findings = [
+            finding
+            for finding in after.findings
+            if not finding.startswith("preserved (not removed) ")
+            and not finding.startswith("customXml parts:")
+        ]
+        has_unexpected = bool(unexpected_findings)
+        preserved_c2pa = bool(expected_c2pa_findings) and not has_unexpected
+        preserved_ai = bool(expected_ai_findings) and not has_unexpected
+    else:
+        preserved_c2pa = False
+        preserved_ai = False
     return {
         "input": str(path),
         "output": str(dest),
@@ -838,8 +871,8 @@ def clean_container(
         "actions": actions,
         "bytes_in": len(data),
         "bytes_out": dest.stat().st_size,
-        "still_has_c2pa": after.has_c2pa,
-        "still_has_ai_metadata": after.has_ai_metadata,
+        "still_has_c2pa": after.has_c2pa and not preserved_c2pa,
+        "still_has_ai_metadata": after.has_ai_metadata and not preserved_ai,
         "post_findings": after.findings,
         "meta": meta,
     }
